@@ -1,3 +1,5 @@
+# learning
+
 ![happy](https://media.tenor.com/Rukf_ikrukgAAAAe/happy-super-happy.png)
 
 ```bash
@@ -11,3 +13,12 @@ uv pip install -e .
 pip install --upgrade "jax[cuda12]"
 pip install --upgrade "jax[cuda13]"
 ```
+
+
+goals:
+write triton kernels for transformer blocks, both forward and backward pass
+get more familiar with jax
+write a "decent" dataloader that does multithreading/multiprocessing (ie we load batches so we always keep GPUs hot)
+train diffusion models
+train flow matching models
+
