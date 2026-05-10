@@ -33,7 +33,7 @@ class CausalTransformerLM(nn.Module):
     ) -> torch.Tensor | tuple[torch.Tensor, list[torch.Tensor]]:
         B, S = x.shape
 
-        # Keep left-padded batches compatible with RoPE by numbering only the
+        # keep left-padded batches compatible with RoPE by numbering only the
         # non-pad tokens.
         if attention_mask is None:
             position_ids = torch.arange(S, device=x.device).unsqueeze(0).expand(B, -1)
@@ -57,10 +57,7 @@ class CausalTransformerLM(nn.Module):
 
         return logits
 
-
-class VisionTransfomer(nn.Module):
-    # todo
-    pass
+    
 
 
 if __name__ == "__main__":
@@ -99,4 +96,3 @@ if __name__ == "__main__":
     rand_tensor = torch.randint(0, 13, (2, 10)) 
     output = model(rand_tensor)
     print(output)
- 
