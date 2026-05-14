@@ -265,20 +265,19 @@ class Qwen3(nn.Module):
         return logits
 
 
-        
-
-
 if __name__ == "__main__":
-    pass
     config = {
+        "num_layers": 28,
         "num_heads": 16,
-        "emb_dim": 1024,
         "num_kv_heads": 8,
+        "emb_dim": 1024,
         "head_dim": 128,
+        "vocab_size": 151_936,
     }
 
-    gqa = Qwen3TransformerBlock(**config)
-    rand_Tensor = torch.rand((2, 10, 1024))
-    output = gqa(rand_Tensor)
-    print(output)
+    model = Qwen3(**config)
+    print(model)
+    input_ids = torch.randint(0, config["vocab_size"], (2, 10))
+    logits = model(input_ids)
+    print(logits.shape)
 
