@@ -2,6 +2,7 @@
 self contained qwen3 arch llm
 """
 
+import math
 import torch
 import torch.nn as nn
 
@@ -11,7 +12,7 @@ class Qwen3RotaryEmbedding(nn.Module):
     The goal of this is to encode position by
     rotating the Q and K vectors inside attention
     """
-    def __init__(self, head_dim: int, base: int = 10000):
+    def __init__(self, head_dim: int, base: int = 1_000_000):
         super().__init__()
         assert head_dim % 2 == 0, "RoPE requires even head_dim"
 
@@ -28,30 +29,189 @@ class Qwen3RotaryEmbedding(nn.Module):
         tensor = [a, b, c, d, e, f, g, h]
         rotate_half(tensor) = [-e, -f, -g, -h, a, b, c, d]
         """
-        x1 = x[...:x.shape[-1] // 2]
+        x1 = x[...,:x.shape[-1] // 2]
         x2 = x[...,x.shape[-1] // 2:]
 
         return torch.cat((-x2, x1), dim=-1)
 
 
-    def foward(self, x: torch.Tensor, position_ids: torch.Tensor):
+    def forward(self, x: torch.Tensor, position_ids: torch.Tensor):
         # add new dimension to end of position ids, get (B, S, 1)
         # add 2 new dimentions to inv_freq, get (1, 1, D/2)
         freqs = position_ids.float()[:, :, None] * self.inv_freq[None, None, :]
 
         # freqs shape: (B, S, D/2)
-        emb = torch.cat(freqs, freqs ,dim=-1)
+        emb = torch.cat([freqs, freqs], dim=-1)
 
         # cos/sin shape: (B, 1, S, D), broadcast over heads
         cos = emb.cos()[:, None, :, :].to(dtype=x.dtype)
         sin = emb.sin()[:, None, :, :].to(dtype=x.dtype)
 
+        # exactly just the rotation matrix
         return (x * cos) + (self.rotate_half(x) * sin)
-        
 
-class Qwen3TransformerBlock(nn.Module):
-    def __init__(self, vocab_size, emb_dim):
+class Qwen3GroupQueryAttention(nn.Module):
+    def __init__(
+        self,
+        num_heads: int,
+        emb_dim: int,
+        num_kv_heads: int = 8,
+        head_dim: int | None = None,
+    ):
         super().__init__()
+        assert num_heads % num_kv_heads == 0 and num_heads >= num_kv_heads, \
+            "num_heads must be a positive multiple of num_kv_heads"
+
+        self.num_heads = num_heads
+        self.emb_dim = emb_dim
+        # Qwen3 decouples head_dim from emb_dim / num_heads
+        self.head_dim = head_dim if head_dim is not None else emb_dim // num_heads
+        self.num_kv_heads = num_kv_heads
+
+        q_out = num_heads * self.head_dim
+        kv_out = num_kv_heads * self.head_dim
+
+        self.q_proj = nn.Linear(emb_dim, q_out, bias=False)
+        self.k_proj = nn.Linear(emb_dim, kv_out, bias=False)
+        self.v_proj = nn.Linear(emb_dim, kv_out, bias=False)
+        self.o_proj = nn.Linear(q_out, emb_dim, bias=False)
+
+        self.q_norm = nn.RMSNorm(self.head_dim)
+        self.k_norm = nn.RMSNorm(self.head_dim)
+
+        self.rope = Qwen3RotaryEmbedding(self.head_dim)
+
+
+    def split_heads(self, x: torch.Tensor) -> torch.Tensor:
+        # reshape input tensor for multihead attention
+        # x is (batch_size, seq_length, emb_dim)
+        B, S, _ = x.shape
+
+        # each head should see a slice of the embeddings
+        # the new shape is (batch_size, num_heads, seq_length, head_dim)
+        return x.reshape(B, S, self.num_heads, self.head_dim).transpose(1, 2)
+
+    
+    def split_kv_heads(self, x: torch.Tensor) -> torch.Tensor:
+        B, S, _ = x.shape
+        return x.reshape(B, S, self.num_kv_heads, self.head_dim).transpose(1, 2)
+
+
+    def combine_heads(self, x: torch.Tensor) -> torch.Tensor:
+        # (B, num_heads, S, head_dim) 
+        B, _, S, _ = x.shape
+        return x.transpose(1, 2).reshape(B, S, self.num_heads * self.head_dim)
+
+    def scaled_self_attention(
+        self,
+        Q: torch.Tensor,
+        K: torch.Tensor,
+        V: torch.Tensor,
+        attention_mask: torch.Tensor | None
+    ):
+
+        # Q matrix contains what each token is looking for
+        # K matrix contains how each token should be matched
+        # V matrix contains the information each token can contribute
+
+        # Q and K are (batch_size, num_heads, seq_length, head_dim)
+        # for matrix mult, we'll take the transpose of K, where we
+        # can simply swap head_dim and seq_length
+        # divide by sqrt of head dim to reduce variance  
+        # matmul automatically broadcasts over the first two dims
+        # shape is now (batch_size, num_heads, seq_length, seq_length)
+
+        attn_scores = torch.matmul(Q, K.transpose(-2, -1)) / math.sqrt(self.head_dim)
+        mask_value = torch.finfo(attn_scores.dtype).min
+
+        S = Q.size(-2)
+        causal_mask = torch.triu(
+            torch.ones(S, S, device=Q.device, dtype=torch.bool),
+            diagonal=1
+        )
+        attn_scores = attn_scores.masked_fill(causal_mask, mask_value)
+
+        # this about the padding tokens
+        if attention_mask is not None:
+            key_padding_mask = ~attention_mask[:, None, None, :].bool()
+            attn_scores = attn_scores.masked_fill(key_padding_mask, mask_value)
+
+        attn_probs = torch.softmax(attn_scores, dim=-1)
+    
+        # this final matrix mult mixes information between the embeddings
+        # of a token with the tokens it attended to
+        return torch.matmul(attn_probs, V)
+
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        attention_mask: torch.Tensor | None = None,
+        position_ids: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        Q = self.q_norm(self.split_heads(self.q_proj(x)))
+        K = self.k_norm(self.split_kv_heads(self.k_proj(x)))
+        V = self.split_kv_heads(self.v_proj(x))
+
+        if position_ids is None:
+            S = x.size(1)
+            position_ids = torch.arange(S, device=x.device).unsqueeze(0)
+
+        Q = self.rope(Q, position_ids)
+        K = self.rope(K, position_ids)
+
+        # GQA !! 
+        repeat_factor = self.num_heads // self.num_kv_heads
+        K = K.repeat_interleave(repeat_factor, dim=1)
+        V = V.repeat_interleave(repeat_factor, dim=1)
+
+
+        attn_output = self.scaled_self_attention(Q, K, V, attention_mask)
+
+        return self.o_proj(self.combine_heads(attn_output))
+
+class SwiGLU(nn.Module):
+    def __init__(self, hidden_dim: int, ffn_dim: int):
+        super().__init__()
+        self.gate_proj = nn.Linear(hidden_dim, ffn_dim, bias=False)
+        self.up_proj = nn.Linear(hidden_dim, ffn_dim, bias=False)
+        self.down_proj = nn.Linear(ffn_dim, hidden_dim, bias=False)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.down_proj(
+            nn.functional.silu(self.gate_proj(x)) * self.up_proj(x)
+        )
+    
+class Qwen3TransformerBlock(nn.Module):
+    def __init__(
+        self,
+        num_heads: int,
+        emb_dim: int,
+        num_kv_heads: int = 8,
+        head_dim: int | None = None,
+    ):
+        super().__init__()
+        self.gqa = Qwen3GroupQueryAttention(num_heads, emb_dim, num_kv_heads, head_dim)
+        self.norm1 = nn.RMSNorm(emb_dim)
+        self.norm2 = nn.RMSNorm(emb_dim)
+
+        ffn_dim = int(emb_dim * 8/ 3) # hard coded in qwen3
+        self.ffn  = SwiGLU(emb_dim, ffn_dim)
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        attention_mask: torch.Tensor | None = None,
+        position_ids: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+
+        x = x + self.gqa(self.norm1(x), attention_mask, position_ids)
+        x = x + self.ffn(self.norm2(x))
+
+        return x
+        
+        
+        
         
 
 class Qwen3(nn.Module):
@@ -64,4 +224,15 @@ class Qwen3(nn.Module):
 
 if __name__ == "__main__":
     pass
+    config = {
+        "num_heads": 16,
+        "emb_dim": 1024,
+        "num_kv_heads": 8,
+        "head_dim": 128,
+    }
+
+    gqa = Qwen3TransformerBlock(**config)
+    rand_Tensor = torch.rand((2, 10, 1024))
+    output = gqa(rand_Tensor)
+    print(output)
 
