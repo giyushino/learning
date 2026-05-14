@@ -210,14 +210,60 @@ class Qwen3TransformerBlock(nn.Module):
 
         return x
         
-        
-        
-        
 
 class Qwen3(nn.Module):
-    def __init__(self, vocab_size, emb_dim):
+    def __init__(
+        self,
+        num_layers: int,
+        num_heads: int,
+        num_kv_heads: int,
+        emb_dim: int,
+        head_dim: int,
+        vocab_size: int
+    ):
         super().__init__()
-        self.embedding = nn.Embedding(vocab_size, emb_dim)
+        self.token_emb = nn.Embedding(vocab_size, emb_dim)
+        self.blocks = nn.ModuleList(
+            Qwen3TransformerBlock(num_heads, emb_dim, num_kv_heads, head_dim)
+            for _ in range(num_layers)
+        )
+        self.norm = nn.RMSNorm(emb_dim)
+        self.lm_head = nn.Linear(emb_dim, vocab_size, bias=False)
+        self.lm_head.weight = self.token_emb.weight
+
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        attention_mask: torch.Tensor | None = None,
+        return_hidden_states: bool = False,
+    ) -> torch.Tensor | tuple[torch.Tensor, list[torch.Tensor]]:
+        B, S = x.shape
+
+        # keep left-padded batches compatible with RoPE by numbering only the
+        # non-pad tokens.
+        if attention_mask is None:
+            position_ids = torch.arange(S, device=x.device).unsqueeze(0).expand(B, -1)
+        else:
+            attention_mask = attention_mask.bool()
+            position_ids = attention_mask.long().cumsum(dim=1) - 1
+            position_ids = position_ids.masked_fill(~attention_mask, 0)
+
+        x = self.token_emb(x)
+        hidden_states: list[torch.Tensor] = [x] if return_hidden_states else []
+
+        for block in self.blocks:
+            x = block(x, attention_mask, position_ids)
+            if return_hidden_states:
+                hidden_states.append(x)
+        
+        # (batch_size, seq_lenth, vocab_size)
+        logits = self.lm_head(self.norm(x))
+        if return_hidden_states:
+            return logits, hidden_states
+
+        return logits
+
 
         
 
