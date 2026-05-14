@@ -3,7 +3,6 @@ vit implementation
 """
 
 import torch
-
 import torch.nn as nn 
 
 from learning.transformer.torch_arch import TransformerBlock
@@ -18,7 +17,7 @@ class TorchVisionTransformer(nn.Module):
         self.pos_embed = nn.Parameter(torch.randn(1, num_patches + 1, emb_dim))
 
         self.blocks = nn.ModuleList(
-            TransformerBlock(num_heads, emb_dim, ffn_mult)
+            TransformerBlock(num_heads, emb_dim, ffn_mult, causal=False)
             for _ in range(num_layers)
         )
 
@@ -28,11 +27,9 @@ class TorchVisionTransformer(nn.Module):
     def forward(self, x):
         x = self.patch_embed(x) # (B, emb_dim, H', W')
         x = x.flatten(2).transpose(1, 2) # (B, num_patches, emb_dim)
-        
 
         cls = self.cls_token.expand(x.shape[0], -1, -1)
         x = torch.cat([cls, x], dim=1)
-        print(f"{x.shape=}\n {self.pos_embed.shape}")
         x = x + self.pos_embed
 
         for block in self.blocks:
@@ -42,11 +39,6 @@ class TorchVisionTransformer(nn.Module):
         x = self.output(x)
 
         return x
-
-
-        
-
-
 
 if __name__ == "__main__":
     vit_config= {
@@ -58,7 +50,6 @@ if __name__ == "__main__":
         "patch_size": 14,
         "img_size": 224,
     }
-
 
     model = TorchVisionTransformer(**vit_config)
     rand_tensor = torch.rand(10, 3, 224, 224)

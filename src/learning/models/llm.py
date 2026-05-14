@@ -1,6 +1,5 @@
 """
-normal transformers and
-vision models
+naive llm
 """
 
 import torch
@@ -18,7 +17,7 @@ class CausalTransformerLM(nn.Module):
         self.token_emb = nn.Embedding(vocab_size, emb_dim)
 
         self.blocks = nn.ModuleList(
-            TransformerBlock(num_heads, emb_dim, ffn_mult)
+            TransformerBlock(num_heads, emb_dim, ffn_mult, causal=True)
             for _ in range(num_layers)
         )
 

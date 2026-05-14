@@ -42,7 +42,7 @@ class RotaryEmbedding(nn.Module):
 
 
 class MultiHeadAttention(nn.Module):
-    def __init__(self, num_heads: int, emb_dim: int):
+    def __init__(self, num_heads: int, emb_dim: int, causal: bool):
         super().__init__()
         # for multi head attention, we split
         # the embeddings across heads
@@ -51,6 +51,7 @@ class MultiHeadAttention(nn.Module):
         self.num_heads = num_heads
         self.emb_dim = emb_dim
         self.head_dim = self.emb_dim // self.num_heads
+        self.causal = causal
 
         self.q_proj = nn.Linear(emb_dim, emb_dim)
         self.k_proj = nn.Linear(emb_dim, emb_dim)
@@ -96,12 +97,13 @@ class MultiHeadAttention(nn.Module):
         attn_scores = torch.matmul(Q, K.transpose(-2, -1)) / math.sqrt(self.head_dim)
         mask_value = torch.finfo(attn_scores.dtype).min
 
-        S = Q.size(-2)
-        causal_mask = torch.triu(
-            torch.ones(S, S, device=Q.device, dtype=torch.bool),
-            diagonal=1
-        )
-        attn_scores = attn_scores.masked_fill(causal_mask, mask_value)
+        if self.causal:
+            S = Q.size(-2)
+            causal_mask = torch.triu(
+                torch.ones(S, S, device=Q.device, dtype=torch.bool),
+                diagonal=1
+            )
+            attn_scores = attn_scores.masked_fill(causal_mask, mask_value)
 
         if attention_mask is not None:
             attention_mask = attention_mask.bool()
@@ -146,9 +148,9 @@ class SwiGLU(nn.Module):
 
 
 class TransformerBlock(nn.Module):
-    def __init__(self, num_heads: int, emb_dim: int, ffn_mult: int):
+    def __init__(self, num_heads: int, emb_dim: int, ffn_mult: int, causal: bool):
         super().__init__()
-        self.mha = MultiHeadAttention(num_heads, emb_dim)
+        self.mha = MultiHeadAttention(num_heads, emb_dim, causal=causal)
         self.norm1 = nn.RMSNorm(emb_dim)
         self.norm2 = nn.RMSNorm(emb_dim)
 
@@ -181,7 +183,8 @@ if __name__ == "__main__":
     config = {
         "num_heads": 4,
         "emb_dim": 728,
-        "ffn_mult": 4
+        "ffn_mult": 4,
+        "causal": True,
     }
     
     mha = TransformerBlock(**config)
