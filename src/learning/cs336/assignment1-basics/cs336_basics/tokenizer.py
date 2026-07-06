@@ -39,6 +39,15 @@ def merge_pairs(ids, pair, new_id):
     return tuple(new_ids)
 
 
+def get_pair_counts(word):
+    counts = {}
+    for i in range(len(word) - 1):
+        p = (word[i], word[i + 1])
+        counts[p] = counts.get(p, 0) + 1
+
+    return counts
+
+
 def pretokenize_chunk(args):
     input_path, start, end, special_tokens = args
     with open(input_path, 'rb') as file:
@@ -60,7 +69,6 @@ def pretokenize_chunk(args):
     return word_count
 
 
-@record_time
 def run_train_bpe(
     input_path: str | os.PathLike,
     vocab_size: int,
@@ -100,61 +108,29 @@ def run_train_bpe(
             pair_counts.items(),
             key=lambda kv: (kv[1], vocab[kv[0][0]], vocab[kv[0][1]])
         )
-        pair_counts.pop(max_pair)
         new_id = len(vocab)
         vocab[new_id] = vocab[max_pair[0]] + vocab[max_pair[1]]
         merges.append((vocab[max_pair[0]], vocab[max_pair[1]]))
-        pair_word_updates = set()
 
-        for word in pair_to_word[max_pair]:
-            new_word = []
-            i = 0
+        for word in pair_to_word[max_pair].copy():
+            freq = word_counts[word]
+            old_pair_counts = get_pair_counts(word)
 
-            while i < len(word):
-                if i < len(word) - 1 and (word[i], word[i + 1]) == max_pair:
-                    new_word.append(new_id)
-                    if i == 0 and len(word) > 2:
-                        new_pair = (new_id, word[i + 2])
-                        pair_word_updates.add(new_pair)
-                        old_pair = (word[i + 1], word[i + 2])
+            new_word = tuple(merge_pairs(word, max_pair, new_id))
+            word_counts[new_word] = word_counts.get(new_word, 0) + freq
+            new_pair_counts = get_pair_counts(new_word)
 
-                        freq = word_counts[word]
-                        pair_counts[new_pair] = pair_counts.get(new_pair, 0) + freq
-                        pair_counts[old_pair] -= freq
-
-                    elif i == len(word) - 2 and len(word) > 2:
-                        new_pair = (word[i - 1], new_id)
-                        pair_word_updates.add(new_pair)
-                        old_pair = (word[i-1], word[i])
-
-                        freq = word_counts[word]
-                        pair_counts[new_pair] = pair_counts.get(new_pair, 0) + freq
-                        pair_counts[old_pair] -= freq
-
-                    else:
-                        freq = word_counts[word]
-                        new_pair = (new_id, word[i - 1])
-                        pair_word_updates.add(new_pair)
-                        old_pair = (word[i-1], word[i])
-                        pair_counts[new_pair] = pair_counts.get(new_pair, 0) + freq
-                        pair_counts[old_pair] -= freq
-
-                        new_pair = (word[i - 1], new_id)
-                        pair_word_updates.add(new_pair)
-                        old_pair = (word[i-1], word[i])
-                        pair_counts[new_pair] = pair_counts.get(new_pair, 0) + freq
-                        pair_counts[old_pair] -= freq
-                    i += 2
-
-
-                else:
-                    new_word.append(word[i])
-                    i += 1
+            for pair, count in old_pair_counts.items():
+                pair_counts[pair] = pair_counts.get(pair, 0) - count * freq
+                pair_to_word[pair].discard(word)
+                if pair_counts[pair] <= 0:
+                    pair_counts.pop(pair)
+                    pair_to_word.pop(pair)
             
-            word_counts[new_word] = word_counts.get(new_word, 0) + 1
-            
-            for pair in pair_word_updates:
-                pair_to_word[pair].add(tuple(new_word))
+            for pair, count in new_pair_counts.items():
+                pair_counts[pair] = pair_counts.get(pair, 0) + count * freq
+                pair_to_word[pair].add(new_word)
+               
 
     return vocab, merges
 
