@@ -14,6 +14,8 @@ Grade yourself:  uv run python tests/grade_part1.py   (from the test4/ dir)
 Do NOT open the grader — it contains a reference implementation.
 """
 
+import math
+
 import torch
 import torch.nn as nn
 
@@ -34,7 +36,23 @@ def scaled_dot_product_attention(q, k, v, attn_mask=None, is_causal=False):
 
     Match torch.nn.functional.scaled_dot_product_attention semantics.
     """
-    raise NotImplementedError
+    attn_scores = torch.matmul(q, k.tranpose(-2, -1)) / math.sqrt(q.size(-1))
+    mask_value = torch.finfo(attn_scores.dtype).min
+
+    if is_causal:
+        S = q.size(-2)
+        causal_mask = torch.triu(
+            torch.ones((S, S), device=q.device, dtype=torch.bool),
+            diagonal = 1
+        )
+        attn_scores = attn_scores.masked_fill(causal_mask, mask_value)
+
+    if attn_mask is not None:
+        key_padding_mask = ~attn_mask[:, None, None, :].bool()
+        attn_scores.masked_fill(key_padding_mask, mask_value)
+
+    attn_probs = torch.softmax(attn_scores, dim=-1)
+    return torch.matmul(attn_probs, v)
 
 
 class MultiHeadAttention(nn.Module):
@@ -61,9 +79,30 @@ class MultiHeadAttention(nn.Module):
         self.v_proj = nn.Linear(d_model, n_kv_heads * self.head_dim, bias=False)
         self.o_proj = nn.Linear(n_heads * self.head_dim, d_model, bias=False)
 
+    def split_heads(self, x: torch.Tensor):
+        B, S, V = x.shape
+        return x.reshape(B, S, self.n_heads, self.head_dim).transpose(1, 2)
+
+    def split_kv_heads(self, x: torch.Tensor):
+        B, S, V = x.shape
+        return x.reshape(B, S, self.n_kv_heads, self.head_dim).transpose(1, 2)
+
+    def combine_heads(self, x: torch.Tensor):
+        B, S, _ = x.shape
+        return x.tranpose(1, 2).reshape(B, S, self.n_heads * self.head_dim)
+        
     def forward(self, x, is_causal=True):
         """x: (B, T, d_model) -> (B, T, d_model).
 
         Use your scaled_dot_product_attention above for the core computation.
         """
-        raise NotImplementedError
+        Q = self.split_heads(self.q_proj(x))
+        K = self.split_kv_heads(self.k_proj(x))
+        V = self.split_kv_heads(self.v_proj(x))
+        
+        repeat_factor = self.num_heads // self.num_kv_heads
+        K = K.repeat_interleave(repeat_factor, dim=1)
+        V = V.repeat_interleave(repeat_factor, dim=1)
+
+        attn_output = scaled_dot_product_attention(Q, K, V, is_causal=is_causal)
+        return self.o_proj(self.combine_heads(attn_output))
