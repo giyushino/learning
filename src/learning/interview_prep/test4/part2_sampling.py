@@ -162,7 +162,9 @@ def top_k_filter(logits, k):
     logits per row is set to -inf. Kept logits are unchanged.
     Assume 1 <= k <= V. Do not modify the input in place.
     """
-    raise NotImplementedError
+    kth = torch.topk(logits, k, dim=1, largest=True, sorted=True).values[..., -1, None]
+    top_k = logits.masked_fill(logits < kth, float('-inf'))
+    return top_k
 
 
 def top_p_filter(logits, p):
@@ -174,7 +176,14 @@ def top_p_filter(logits, p):
     keep at least the top-1 token. Kept logits are unchanged.
     Do not modify the input in place.
     """
-    raise NotImplementedError
+    sorted_logits, sorted_indices = torch.sort(logits, dim=-1, descending=True)
+    probs = torch.softmax(sorted_logits, dim=-1)
+    cum_probs = probs.cumsum(dim=-1)
+    remove = (cum_probs - probs) >= p
+    sorted_logits = sorted_logits.masked_fill(remove, float('-inf'))
+
+    return torch.zeros_like(logits).scatter_(-1, sorted_indices, sorted_logits)
+
 
 
 # ----------------------------------------------------------------------------
@@ -190,7 +199,17 @@ def sample(logits, temperature=1.0, top_k=None, top_p=None, generator=None):
       sample from the resulting distribution with torch.multinomial, passing
       `generator` through for reproducibility.
     """
-    raise NotImplementedError
+    if temperature == 0.0:
+        greedy_token_pos = torch.argmax(logits, -1)
+        return greedy_token_pos
+    logits = logits / temperature
+    if top_k is not None:
+        logits = top_k_filter(logits, top_k)
+    if top_p is not None:
+        logits = top_p_filter(logits, top_p)
+
+    prob_dist = torch.softmax(logits, dim=-1)
+    return torch.multinomial(input=prob_dist, num_samples=1, replacement=False, generator=generator).squeeze(-1)
 
 
 # ----------------------------------------------------------------------------
