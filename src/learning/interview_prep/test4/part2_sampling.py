@@ -20,6 +20,8 @@ Grade yourself:  uv run python tests/grade_part2.py   (from the test4/ dir)
 Do NOT open the grader — it contains a reference implementation.
 """
 
+import math
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -40,6 +42,15 @@ class CausalSelfAttention(nn.Module):
         self.v_proj = nn.Linear(d_model, d_model, bias=False)
         self.o_proj = nn.Linear(d_model, d_model, bias=False)
 
+    def split_heads(self, x):
+        B, S, _ = x.shape
+        return x.reshape(B, S, self.n_heads, self.head_dim).transpose(1, 2)
+
+    def combine_heads(self, x):
+        B, _, S, _ = x.shape
+        return x.transpose(1, 2).reshape(B, S, self.n_heads * self.head_dim)
+        
+
     def forward(self, x, past_kv=None):
         """Causal self-attention over (cached prefix + x).
 
@@ -58,7 +69,33 @@ class CausalSelfAttention(nn.Module):
         global position <= t (all cached keys, plus causal within the new
         block). Get this right — the off-by-one here is the whole question.
         """
-        raise NotImplementedError
+        Q = self.split_heads(self.q_proj(x))
+        # this is the number of new tokens
+        S = Q.size(-2)
+
+        K = self.split_heads(self.k_proj(x))
+        V = self.split_heads(self.v_proj(x))
+        if past_kv is None:
+            past_offset = 0
+            curr_kv = (K, V)
+        else:
+            past_offset = past_kv[0].size(2)
+            cached_k = torch.cat([past_kv[0], K], dim=2)
+            cached_v = torch.cat([past_kv[1], V], dim=2)
+            curr_kv = (cached_k, cached_v)
+
+        attn_scores = torch.matmul(Q, curr_kv[0].transpose(-2, -1)) / math.sqrt(self.head_dim)
+        mask_value = torch.finfo(attn_scores.dtype).min
+
+        causal_mask = torch.triu(
+            torch.ones(S, past_offset + S, device=Q.device, dtype=torch.bool),
+            diagonal=past_offset + 1,
+        )
+        attn_scores = attn_scores.masked_fill(causal_mask, mask_value)
+        attn_probs = torch.softmax(attn_scores, dim=-1)
+        attn_out = self.combine_heads(torch.matmul(attn_probs, curr_kv[1]))
+        return self.o_proj(attn_out), curr_kv
+       
 
 
 # ----------------------------------------------------------------------------
