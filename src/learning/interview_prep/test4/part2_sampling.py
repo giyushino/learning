@@ -228,4 +228,16 @@ def generate(model, idx, max_new_tokens, temperature=0.0, top_k=None,
         token, each seeing only ONE new token (the grader checks this).
       - Use `sample` above to pick each next token.
     """
-    raise NotImplementedError
+    kv_cache = None
+
+    logits, kv_cache = model(idx, kv_cache)
+    new_tokens = sample(logits[:, -1], temperature, top_k, top_p, generator)
+    idx = torch.cat([idx, new_tokens.unsqueeze(-1)], dim=-1)
+
+    for _ in range(max_new_tokens - 1):
+        logits, kv_cache = model(new_tokens.unsqueeze(-1), kv_cache)
+        new_tokens = sample(logits[:, -1], temperature, top_k, top_p, generator)
+        idx = torch.cat([idx, new_tokens.unsqueeze(-1)], dim=-1)
+ 
+    return idx
+
