@@ -36,7 +36,7 @@ def scaled_dot_product_attention(q, k, v, attn_mask=None, is_causal=False):
 
     Match torch.nn.functional.scaled_dot_product_attention semantics.
     """
-    attn_scores = torch.matmul(q, k.tranpose(-2, -1)) / math.sqrt(q.size(-1))
+    attn_scores = torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(q.size(-1))
     mask_value = torch.finfo(attn_scores.dtype).min
 
     if is_causal:
@@ -48,8 +48,8 @@ def scaled_dot_product_attention(q, k, v, attn_mask=None, is_causal=False):
         attn_scores = attn_scores.masked_fill(causal_mask, mask_value)
 
     if attn_mask is not None:
-        key_padding_mask = ~attn_mask[:, None, None, :].bool()
-        attn_scores.masked_fill(key_padding_mask, mask_value)
+        key_padding_mask = ~attn_mask.bool()
+        attn_scores = attn_scores.masked_fill(key_padding_mask, mask_value)
 
     attn_probs = torch.softmax(attn_scores, dim=-1)
     return torch.matmul(attn_probs, v)
@@ -88,8 +88,8 @@ class MultiHeadAttention(nn.Module):
         return x.reshape(B, S, self.n_kv_heads, self.head_dim).transpose(1, 2)
 
     def combine_heads(self, x: torch.Tensor):
-        B, S, _ = x.shape
-        return x.tranpose(1, 2).reshape(B, S, self.n_heads * self.head_dim)
+        B, S, _, _ = x.shape
+        return x.transpose(1, 2).reshape(B, S, self.n_heads * self.head_dim)
         
     def forward(self, x, is_causal=True):
         """x: (B, T, d_model) -> (B, T, d_model).
@@ -100,7 +100,7 @@ class MultiHeadAttention(nn.Module):
         K = self.split_kv_heads(self.k_proj(x))
         V = self.split_kv_heads(self.v_proj(x))
         
-        repeat_factor = self.num_heads // self.num_kv_heads
+        repeat_factor = self.n_heads // self.n_kv_heads
         K = K.repeat_interleave(repeat_factor, dim=1)
         V = V.repeat_interleave(repeat_factor, dim=1)
 
