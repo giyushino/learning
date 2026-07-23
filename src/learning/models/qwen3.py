@@ -178,6 +178,9 @@ class SwiGLU(nn.Module):
         self.down_proj = nn.Linear(ffn_dim, hidden_dim, bias=False)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        gate = self.gate_proj(x)
+        up = self.up_proj(x)
+        return self.down_proj(torch.sigmoid(gate) * gate * up)
         return self.down_proj(
             nn.functional.silu(self.gate_proj(x)) * self.up_proj(x)
         )
@@ -276,8 +279,8 @@ if __name__ == "__main__":
     }
 
     model = Qwen3(**config)
-    print(model)
     input_ids = torch.randint(0, config["vocab_size"], (2, 10))
     logits = model(input_ids)
     print(logits.shape)
+
 
