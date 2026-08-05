@@ -19,65 +19,62 @@ const border_color = rl.Color.init(120, 120, 140, 255);
 const Piece = enum { i, j, l, o, s, t, z };
 const box_size = [7]usize{ 4, 3, 3, 2, 3, 3, 3 };
 const piece_colors = [7]rl.Color{
-    .init(0, 240, 240, 255),   // I cyan
-    .init(0, 0, 240, 255),     // J blue
-    .init(240, 160, 0, 255),   // L orange
-    .init(240, 240, 0, 255),   // O yellow
-    .init(0, 240, 0, 255),     // S green
-    .init(160, 0, 240, 255),   // T purple
-    .init(240, 0, 0, 255),     // Z red
+    .init(0, 240, 240, 255), // I cyan
+    .init(0, 0, 240, 255), // J blue
+    .init(240, 160, 0, 255), // L orange
+    .init(240, 240, 0, 255), // O yellow
+    .init(0, 240, 0, 255), // S green
+    .init(160, 0, 240, 255), // T purple
+    .init(240, 0, 0, 255), // Z red
 };
 const Mask = u16;
 const Coord = struct { col: i32, row: i32 };
-
-
-
 
 fn genShapes() [7][4]Mask {
     // first explicity write out what the shapes
     // look like in a nested arr, then we can rotate,
     // and write all of this to binary
     const i_piece = [4][4]u8{
-        .{0, 1, 0, 0},
-        .{0, 1, 0, 0},
-        .{0, 1, 0, 0},
-        .{0, 1, 0, 0},
+        .{ 0, 1, 0, 0 },
+        .{ 0, 1, 0, 0 },
+        .{ 0, 1, 0, 0 },
+        .{ 0, 1, 0, 0 },
     };
     const j_piece = [4][4]u8{
-        .{1, 0, 0, 0},
-        .{1, 1, 1, 0},
-        .{0, 0, 0, 0},
-        .{0, 0, 0, 0},
+        .{ 1, 0, 0, 0 },
+        .{ 1, 1, 1, 0 },
+        .{ 0, 0, 0, 0 },
+        .{ 0, 0, 0, 0 },
     };
     const l_piece = [4][4]u8{
-        .{0, 0, 1, 0},
-        .{1, 1, 1, 0},
-        .{0, 0, 0, 0},
-        .{0, 0, 0, 0},
+        .{ 0, 0, 1, 0 },
+        .{ 1, 1, 1, 0 },
+        .{ 0, 0, 0, 0 },
+        .{ 0, 0, 0, 0 },
     };
     const o_piece = [4][4]u8{
-        .{1, 1, 0, 0},
-        .{1, 1, 0, 0},
-        .{0, 0, 0, 0},
-        .{0, 0, 0, 0},
+        .{ 1, 1, 0, 0 },
+        .{ 1, 1, 0, 0 },
+        .{ 0, 0, 0, 0 },
+        .{ 0, 0, 0, 0 },
     };
     const s_piece = [4][4]u8{
-        .{0, 1, 1, 0},
-        .{1, 1, 0, 0},
-        .{0, 0, 0, 0},
-        .{0, 0, 0, 0},
+        .{ 0, 1, 1, 0 },
+        .{ 1, 1, 0, 0 },
+        .{ 0, 0, 0, 0 },
+        .{ 0, 0, 0, 0 },
     };
     const t_piece = [4][4]u8{
-        .{0, 1, 0, 0},
-        .{1, 1, 1, 0},
-        .{0, 0, 0, 0},
-        .{0, 0, 0, 0},
+        .{ 0, 1, 0, 0 },
+        .{ 1, 1, 1, 0 },
+        .{ 0, 0, 0, 0 },
+        .{ 0, 0, 0, 0 },
     };
     const z_piece = [4][4]u8{
-        .{1, 1, 0, 0},
-        .{0, 1, 1, 0},
-        .{0, 0, 0, 0},
-        .{0, 0, 0, 0},
+        .{ 1, 1, 0, 0 },
+        .{ 0, 1, 1, 0 },
+        .{ 0, 0, 0, 0 },
+        .{ 0, 0, 0, 0 },
     };
 
     // ordering must match the pieces enum
@@ -160,17 +157,36 @@ fn drawGrid() void {
     }, 2, border_color);
 }
 
+fn allCells(piece: Piece, rotation: u2, x_off: i32, y_off: i32) struct { [4]Coord, [12]Coord } {
+    var occupied_cells: [4]Coord = undefined;
+    var unoccupied_cells: [12]Coord = undefined;
+    var num_found: usize = 0; // at most 4 cells
+    var num_empty: usize = 0; // the remaining 12
+    var piece_mask = SHAPES[@intFromEnum(piece)][rotation];
+
+    for (0..16) |i| {
+        const coord = Coord{ .col = x_off + @as(i32, @intCast(i % 4)), .row = y_off + @as(i32, @intCast(i / 4)) };
+        if (piece_mask & 1 != 0) {
+            occupied_cells[num_found] = coord;
+            num_found += 1;
+        } else {
+            unoccupied_cells[num_empty] = coord;
+            num_empty += 1;
+        }
+        piece_mask >>= 1;
+    }
+    return .{ occupied_cells, unoccupied_cells };
+}
+
 fn cells(piece: Piece, rotation: u2, x_off: i32, y_off: i32) [4]Coord {
     var occupied_cells: [4]Coord = undefined;
-    var num_found: u4 = 0; // as most 4 pieces
+    var num_found: usize = 0; // at most 4 cells
     var piece_mask = SHAPES[@intFromEnum(piece)][rotation];
-    
+
     for (0..16) |i| {
+        const coord = Coord{ .col = x_off + @as(i32, @intCast(i % 4)), .row = y_off + @as(i32, @intCast(i / 4)) };
         if (piece_mask & 1 != 0) {
-            occupied_cells[num_found] = Coord{
-                .col = x_off + @as(i32, @intCast(i % 4)),
-                .row = y_off + @as(i32, @intCast(i / 4))
-            };
+            occupied_cells[num_found] = coord;
             num_found += 1;
         }
         piece_mask >>= 1;
@@ -178,7 +194,45 @@ fn cells(piece: Piece, rotation: u2, x_off: i32, y_off: i32) [4]Coord {
     return occupied_cells;
 }
 
-fn drawShape(piece:Piece, rotation: u2, x_off: i32, y_off: i32) void {
+fn validMove(piece: Piece, rotation: u2, x_off: i32, y_off: i32) bool {
+    var piece_mask = SHAPES[@intFromEnum(piece)][rotation];
+
+    for (0..16) |i| {
+        const coord = Coord{ .col = x_off + @as(i32, @intCast(i % 4)), .row = y_off + @as(i32, @intCast(i / 4)) };
+        if (piece_mask & 1 != 0) {
+            const in_bounds = coord.col >= 0 and coord.col < cols and coord.row < visible_rows;
+            if (!in_bounds) return false;
+        }
+        piece_mask >>= 1;
+    }
+    return true;
+}
+
+fn drawShapeDebugging(piece: Piece, rotation: u2, x_off: i32, y_off: i32) void {
+    const color = piece_colors[@intFromEnum(piece)];
+    // const occupied_cells = cells(piece, rotation, x_off, y_off);
+    const all_cells = allCells(piece, rotation, x_off, y_off);
+
+    for (all_cells[0]) |cell| {
+        var rect = cellRect(cell);
+        // later we should just move this into
+        // cell rect
+        rect.width -= 2;
+        rect.height -= 2;
+        rl.drawRectangleRec(rect, color);
+    }
+    for (all_cells[1]) |cell| {
+        const rect = cellRect(cell);
+        rl.drawRectangleLinesEx(.{
+            .x = rect.x,
+            .y = rect.y,
+            .width = cell_size,
+            .height = cell_size,
+        }, 2, border_color);
+    }
+}
+
+fn drawShape(piece: Piece, rotation: u2, x_off: i32, y_off: i32) void {
     const color = piece_colors[@intFromEnum(piece)];
     const occupied_cells = cells(piece, rotation, x_off, y_off);
 
@@ -192,14 +246,10 @@ fn drawShape(piece:Piece, rotation: u2, x_off: i32, y_off: i32) void {
     }
 }
 
-
 // for now just want to see if we can draw to screen a rectangle
 fn testDrawSquare() void {
     rl.drawRectangle(0, 0, cell_size, cell_size, rl.Color.red);
-    const coords = Coord{
-        .col = 0,
-        .row = 10
-    };
+    const coords = Coord{ .col = 0, .row = 10 };
     rl.drawRectangleRec(cellRect(coords), rl.Color.red);
 }
 
@@ -210,33 +260,45 @@ pub fn main(init: std.process.Init) !void {
     defer rl.closeWindow();
 
     rl.setTargetFPS(60);
-    
+
     const update_y_pos_rate: u8 = std.math.maxInt(u8);
     var rot: u2 = 0;
     var frames: u32 = 0;
     var x_pos: i32 = 4;
     var y_pos: i32 = 0;
+    const piece: Piece = .i;
 
     while (!rl.windowShouldClose()) {
         frames += 1;
         rl.beginDrawing();
         defer rl.endDrawing();
-        
+
         rl.clearBackground(bg_color);
         drawGrid();
         testDrawSquare();
-        
+
         if (rl.isKeyPressed(.right)) {
-            x_pos = @min(x_pos + 1, cols);
+            if (validMove(piece, rot, x_pos+1, y_pos)) {
+                std.debug.print("pressed the right key", .{});
+                x_pos += 1;
+            }
         }
         if (rl.isKeyPressed(.left)) {
-            x_pos = @max(x_pos - 1, 0);
+            if (validMove(piece, rot, x_pos-1, y_pos)) {
+                x_pos -= 1;
+            }
         }
-
         if (rl.isKeyPressed(.up)) {
-            rot -%= 1;
+            if (validMove(piece, rot-%1, x_pos, y_pos)) {
+                rot -%= 1;
+            }
         }
-        drawShape(Piece.i, rot, x_pos, y_pos);
+        if (rl.isKeyPressed(.down)) {
+            if (validMove(piece, rot, x_pos, y_pos+1)) {
+                y_pos += 1;
+            }
+        }
+        drawShape(piece, rot, x_pos, y_pos);
         if (frames % update_y_pos_rate == 0) {
             y_pos += 1;
         }
