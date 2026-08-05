@@ -194,14 +194,19 @@ fn cells(piece: Piece, rotation: u2, x_off: i32, y_off: i32) [4]Coord {
     return occupied_cells;
 }
 
-fn validMove(piece: Piece, rotation: u2, x_off: i32, y_off: i32) bool {
+fn validMove(piece: Piece, board: [visible_rows][cols]?Piece, rotation: u2, x_off: i32, y_off: i32) bool {
     var piece_mask = SHAPES[@intFromEnum(piece)][rotation];
 
     for (0..16) |i| {
         const coord = Coord{ .col = x_off + @as(i32, @intCast(i % 4)), .row = y_off + @as(i32, @intCast(i / 4)) };
         if (piece_mask & 1 != 0) {
-            const in_bounds = coord.col >= 0 and coord.col < cols and coord.row < visible_rows;
+            // The bounds checks must precede the board lookup: `and` short-circuits,
+            // so the @intCast only runs once the coord is known to be on the board.
+            const in_bounds = coord.col >= 0 and coord.col < cols and
+                coord.row >= 0 and coord.row < visible_rows and
+                board[@intCast(coord.row)][@intCast(coord.col)] == null;
             if (!in_bounds) return false;
+
         }
         piece_mask >>= 1;
     }
@@ -246,6 +251,15 @@ fn drawShape(piece: Piece, rotation: u2, x_off: i32, y_off: i32) void {
     }
 }
 
+fn initBoardState() [visible_rows][cols]?Piece {
+    var board_state: [visible_rows][cols]?Piece = undefined;
+    for (&board_state) |*row| {
+        for (row) |*cell| { cell.* = null; }
+    }
+    return board_state;
+
+}
+
 // for now just want to see if we can draw to screen a rectangle
 fn testDrawSquare() void {
     rl.drawRectangle(0, 0, cell_size, cell_size, rl.Color.red);
@@ -261,12 +275,15 @@ pub fn main(init: std.process.Init) !void {
 
     rl.setTargetFPS(60);
 
-    const update_y_pos_rate: u8 = std.math.maxInt(u8);
+    const gravity: u8 = std.math.maxInt(u8);
+    const piece_update_rate: u8 = 5;
     var rot: u2 = 0;
     var frames: u32 = 0;
     var x_pos: i32 = 4;
     var y_pos: i32 = 0;
     const piece: Piece = .i;
+    var board_state = initBoardState();
+    board_state[0][0] = Piece.i;
 
     while (!rl.windowShouldClose()) {
         frames += 1;
@@ -277,29 +294,28 @@ pub fn main(init: std.process.Init) !void {
         drawGrid();
         testDrawSquare();
 
-        if (rl.isKeyPressed(.right)) {
-            if (validMove(piece, rot, x_pos+1, y_pos)) {
-                std.debug.print("pressed the right key", .{});
-                x_pos += 1;
+        if (rl.isKeyDown(.right)) {
+            if (validMove(piece, board_state, rot, x_pos+1, y_pos)) {
+                if (frames % piece_update_rate == 0) x_pos += 1;
             }
         }
-        if (rl.isKeyPressed(.left)) {
-            if (validMove(piece, rot, x_pos-1, y_pos)) {
-                x_pos -= 1;
+        if (rl.isKeyDown(.left)) {
+            if (validMove(piece, board_state, rot, x_pos-1, y_pos)) {
+                if (frames % piece_update_rate == 0) x_pos -= 1;
             }
         }
         if (rl.isKeyPressed(.up)) {
-            if (validMove(piece, rot-%1, x_pos, y_pos)) {
+            if (validMove(piece, board_state, rot-%1, x_pos, y_pos)) {
                 rot -%= 1;
             }
         }
-        if (rl.isKeyPressed(.down)) {
-            if (validMove(piece, rot, x_pos, y_pos+1)) {
-                y_pos += 1;
+        if (rl.isKeyDown(.down)) {
+            if (validMove(piece, board_state, rot, x_pos, y_pos+1)) {
+                if (frames % piece_update_rate == 0) y_pos += 1;
             }
         }
         drawShape(piece, rot, x_pos, y_pos);
-        if (frames % update_y_pos_rate == 0) {
+        if (frames % gravity == 0) {
             y_pos += 1;
         }
     }
