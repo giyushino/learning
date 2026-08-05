@@ -194,7 +194,7 @@ fn cells(piece: Piece, rotation: u2, x_off: i32, y_off: i32) [4]Coord {
     return occupied_cells;
 }
 
-fn validMove(piece: Piece, board: [visible_rows][cols]?Piece, rotation: u2, x_off: i32, y_off: i32) bool {
+fn validMove(piece: Piece, board: *[visible_rows][cols]?Piece, rotation: u2, x_off: i32, y_off: i32) bool {
     var piece_mask = SHAPES[@intFromEnum(piece)][rotation];
 
     for (0..16) |i| {
@@ -295,22 +295,22 @@ pub fn main(init: std.process.Init) !void {
         testDrawSquare();
 
         if (rl.isKeyDown(.right)) {
-            if (validMove(piece, board_state, rot, x_pos+1, y_pos)) {
+            if (validMove(piece, &board_state, rot, x_pos+1, y_pos)) {
                 if (frames % piece_update_rate == 0) x_pos += 1;
             }
         }
         if (rl.isKeyDown(.left)) {
-            if (validMove(piece, board_state, rot, x_pos-1, y_pos)) {
+            if (validMove(piece, &board_state, rot, x_pos-1, y_pos)) {
                 if (frames % piece_update_rate == 0) x_pos -= 1;
             }
         }
         if (rl.isKeyPressed(.up)) {
-            if (validMove(piece, board_state, rot-%1, x_pos, y_pos)) {
+            if (validMove(piece, &board_state, rot-%1, x_pos, y_pos)) {
                 rot -%= 1;
             }
         }
         if (rl.isKeyDown(.down)) {
-            if (validMove(piece, board_state, rot, x_pos, y_pos+1)) {
+            if (validMove(piece, &board_state, rot, x_pos, y_pos+1)) {
                 if (frames % piece_update_rate == 0) y_pos += 1;
             }
         }
