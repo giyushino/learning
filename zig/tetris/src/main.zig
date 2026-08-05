@@ -1,14 +1,14 @@
 const std = @import("std");
 const rl = @import("raylib");
 
-const screen_width = 600;
-const screen_height = 800;
+const screen_width = 1000;
+const screen_height = 1400;
 
 const cols = 10;
 const visible_rows = 20;
 
-// top left is 0, 0
-const cell_size = 32;
+// top left is 0,0
+const cell_size = 60;
 const origin_x = (screen_width - cols * cell_size) / 2;
 const origin_y = (screen_height - visible_rows * cell_size) / 2;
 
@@ -18,7 +18,20 @@ const border_color = rl.Color.init(120, 120, 140, 255);
 
 const Piece = enum { i, j, l, o, s, t, z };
 const box_size = [7]usize{ 4, 3, 3, 2, 3, 3, 3 };
+const piece_colors = [7]rl.Color{
+    .init(0, 240, 240, 255),   // I cyan
+    .init(0, 0, 240, 255),     // J blue
+    .init(240, 160, 0, 255),   // L orange
+    .init(240, 240, 0, 255),   // O yellow
+    .init(0, 240, 0, 255),     // S green
+    .init(160, 0, 240, 255),   // T purple
+    .init(240, 0, 0, 255),     // Z red
+};
 const Mask = u16;
+const Coord = struct { col: i32, row: i32 };
+
+
+
 
 fn genShapes() [7][4]Mask {
     // first explicity write out what the shapes
@@ -72,10 +85,9 @@ fn genShapes() [7][4]Mask {
 
     var shapes: [7][4]Mask = undefined;
     for (spawn_pieces, 0..) |spawn, idx| {
-        // Each rotation is the previous one turned once more, so turns
-        // accumulate instead of every rotation starting over from spawn.
         var piece = spawn;
         shapes[idx][0] = maskFromGrid(piece);
+        // overwrite piece each time
         for (1..4) |rot| {
             piece = rotatePiece(piece, box_size[idx]);
             shapes[idx][rot] = maskFromGrid(piece);
@@ -114,10 +126,10 @@ fn maskFromGrid(piece: [4][4]u8) Mask {
 
 const SHAPES = genShapes();
 
-fn cellRect(col: i32, row: i32) rl.Rectangle {
+fn cellRect(coord: Coord) rl.Rectangle {
     return .{
-        .x = @floatFromInt(origin_x + col * cell_size),
-        .y = @floatFromInt(origin_y + row * cell_size),
+        .x = @floatFromInt(origin_x + coord.col * cell_size),
+        .y = @floatFromInt(origin_y + coord.row * cell_size),
         .width = cell_size,
         .height = cell_size,
     };
@@ -148,51 +160,85 @@ fn drawGrid() void {
     }, 2, border_color);
 }
 
-fn drawShape(piece: Piece) void {
+fn cells(piece: Piece, rotation: u2, x_off: i32, y_off: i32) [4]Coord {
+    var occupied_cells: [4]Coord = undefined;
+    var num_found: u4 = 0; // as most 4 pieces
+    var piece_mask = SHAPES[@intFromEnum(piece)][rotation];
+    
+    for (0..16) |i| {
+        if (piece_mask & 1 != 0) {
+            occupied_cells[num_found] = Coord{
+                .col = x_off + @as(i32, @intCast(i % 4)),
+                .row = y_off + @as(i32, @intCast(i / 4))
+            };
+            num_found += 1;
+        }
+        piece_mask >>= 1;
+    }
+    return occupied_cells;
 }
 
-/// Prints all four rotations of a piece as ASCII, so transcription errors in
-/// the shape table are visible at a glance.
-fn printShape(piece: Piece) void {
-    const rotations = SHAPES[@intFromEnum(piece)];
-    std.debug.print("--- {s} ---\n", .{@tagName(piece)});
-    for (rotations, 0..) |mask, rot| {
-        std.debug.print("rotation {d}: {b:0>16}\n", .{ rot, mask });
-        for (0..4) |r| {
-            for (0..4) |c| {
-                const bit: u4 = @intCast(r * 4 + c);
-                const filled = mask & (@as(Mask, 1) << bit) != 0;
-                std.debug.print("{s}", .{if (filled) "#" else "."});
-            }
-            std.debug.print("\n", .{});
-        }
-        std.debug.print("\n", .{});
+fn drawShape(piece:Piece, rotation: u2, x_off: i32, y_off: i32) void {
+    const color = piece_colors[@intFromEnum(piece)];
+    const occupied_cells = cells(piece, rotation, x_off, y_off);
+
+    for (occupied_cells) |cell| {
+        var rect = cellRect(cell);
+        // later we should just move this into
+        // cell rect
+        rect.width -= 2;
+        rect.height -= 2;
+        rl.drawRectangleRec(rect, color);
     }
 }
+
 
 // for now just want to see if we can draw to screen a rectangle
 fn testDrawSquare() void {
     rl.drawRectangle(0, 0, cell_size, cell_size, rl.Color.red);
-    rl.drawRectangleRec(cellRect(10, 0), rl.Color.red);
+    const coords = Coord{
+        .col = 0,
+        .row = 10
+    };
+    rl.drawRectangleRec(cellRect(coords), rl.Color.red);
 }
 
 pub fn main(init: std.process.Init) !void {
     _ = init;
 
-    // printShape(.j);
-
     rl.initWindow(screen_width, screen_height, "tetris");
     defer rl.closeWindow();
 
     rl.setTargetFPS(60);
+    
+    const update_y_pos_rate: u8 = std.math.maxInt(u8);
+    var rot: u2 = 0;
+    var frames: u32 = 0;
+    var x_pos: i32 = 4;
+    var y_pos: i32 = 0;
 
-    // Main game loop: runs until the window is closed or Esc is pressed.
     while (!rl.windowShouldClose()) {
+        frames += 1;
         rl.beginDrawing();
         defer rl.endDrawing();
-
+        
         rl.clearBackground(bg_color);
         drawGrid();
         testDrawSquare();
+        
+        if (rl.isKeyPressed(.right)) {
+            x_pos = @min(x_pos + 1, cols);
+        }
+        if (rl.isKeyPressed(.left)) {
+            x_pos = @max(x_pos - 1, 0);
+        }
+
+        if (rl.isKeyPressed(.up)) {
+            rot -%= 1;
+        }
+        drawShape(Piece.i, rot, x_pos, y_pos);
+        if (frames % update_y_pos_rate == 0) {
+            y_pos += 1;
+        }
     }
 }
