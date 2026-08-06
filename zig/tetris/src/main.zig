@@ -314,10 +314,16 @@ pub fn main(init: std.process.Init) !void {
 
     const gravity: u8 = std.math.maxInt(u8);
     const piece_update_rate: u8 = 5;
+    const num_static_frames: u16 = 60;
+    var num_frames_stuck: u16 = 0;
     var rot: u2 = 0;
     var frames: u32 = 0;
     var x_pos: i32 = 4;
     var y_pos: i32 = 0;
+
+    var old_x_pos: i32 = 0;
+    var old_y_pos: i32 = 0;
+    var old_rot: u2 = 0;
 
     var piece: Piece = .i;
     var board_state = initBoardState();
@@ -351,15 +357,30 @@ pub fn main(init: std.process.Init) !void {
                 if (frames % piece_update_rate == 0) y_pos += 1;
             } 
         }
-        drawShape(piece, rot, x_pos, y_pos);
-        drawBoard(&board_state);
         if (frames % gravity == 0) {
             if (validMove(piece, &board_state, rot, x_pos, y_pos+1)) {
                 if (frames % piece_update_rate == 0) y_pos += 1;
-            } else {
-                saveBoard(piece, &board_state, rot, x_pos, y_pos);
-                piece = getNewPiece(random, &x_pos, &y_pos);
+            }         
+        }
+
+        drawShape(piece, rot, x_pos, y_pos);
+        drawBoard(&board_state);
+
+        // if the piece can't move down, let's start a timer
+        // if it still can't move down after like 2 seconds,
+        // let's just place the piece
+        if (!validMove(piece, &board_state, rot, x_pos, y_pos+1)) {
+            if (old_rot == rot and old_x_pos == x_pos and old_y_pos == y_pos) {
+                num_frames_stuck += 1;
+                if (num_frames_stuck == num_static_frames) {
+                    saveBoard(piece, &board_state, rot, x_pos, y_pos);
+                    piece = getNewPiece(random, &x_pos, &y_pos);
+                    num_frames_stuck = 0;
+                }
             }
         }
+        old_y_pos = y_pos;
+        old_x_pos = x_pos;
+        old_rot = rot;
     }
 }
