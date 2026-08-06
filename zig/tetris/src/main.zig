@@ -251,13 +251,28 @@ fn drawShape(piece: Piece, rotation: u2, x_off: i32, y_off: i32) void {
     }
 }
 
+fn drawBoard(board: *[visible_rows][cols]?Piece) void {
+    // const color = piece_colors[@intFromEnum(piece)];
+    
+    for (0..visible_rows) |row| {
+        for (0..cols) |col| {
+            if (board[row][col]) |piece| {
+                const color = piece_colors[@intFromEnum(piece)];
+                var rect = cellRect(.{ .col = @intCast(col), .row = @intCast(row) });
+                rect.width -= 2;
+                rect.height -= 2;
+                rl.drawRectangleRec(rect, color);
+            }
+        }
+    }
+}
+
 fn initBoardState() [visible_rows][cols]?Piece {
     var board_state: [visible_rows][cols]?Piece = undefined;
     for (&board_state) |*row| {
         for (row) |*cell| { cell.* = null; }
     }
     return board_state;
-
 }
 
 // for now just want to see if we can draw to screen a rectangle
@@ -267,7 +282,29 @@ fn testDrawSquare() void {
     rl.drawRectangleRec(cellRect(coords), rl.Color.red);
 }
 
+fn getNewPiece(random: std.Random, x_pos: *i32, y_pos: *i32) Piece {
+    x_pos.* = 4;
+    y_pos.* = 0;
+    return random.enumValue(Piece);
+}
+
+fn saveBoard(piece: Piece, board: *[visible_rows][cols]?Piece, rotation: u2, x_off: i32, y_off: i32) void {
+    var piece_mask = SHAPES[@intFromEnum(piece)][rotation];
+
+    for (0..16) |i| {
+        const coord = Coord{ .col = x_off + @as(i32, @intCast(i % 4)), .row = y_off + @as(i32, @intCast(i / 4)) };
+        if (piece_mask & 1 != 0) {
+                board[@intCast(coord.row)][@intCast(coord.col)] = piece;
+        }
+        piece_mask >>= 1;
+    }
+}
+
 pub fn main(init: std.process.Init) !void {
+    // TODO: seed from std.crypto.random.int(u64) once done debugging; a fixed
+    // seed means the same piece sequence every run.
+    var prng = std.Random.DefaultPrng.init(0);
+    const random = prng.random();
     _ = init;
 
     rl.initWindow(screen_width, screen_height, "tetris");
@@ -281,9 +318,9 @@ pub fn main(init: std.process.Init) !void {
     var frames: u32 = 0;
     var x_pos: i32 = 4;
     var y_pos: i32 = 0;
-    const piece: Piece = .i;
+
+    var piece: Piece = .i;
     var board_state = initBoardState();
-    board_state[0][0] = Piece.i;
 
     while (!rl.windowShouldClose()) {
         frames += 1;
@@ -312,11 +349,17 @@ pub fn main(init: std.process.Init) !void {
         if (rl.isKeyDown(.down)) {
             if (validMove(piece, &board_state, rot, x_pos, y_pos+1)) {
                 if (frames % piece_update_rate == 0) y_pos += 1;
-            }
+            } 
         }
         drawShape(piece, rot, x_pos, y_pos);
+        drawBoard(&board_state);
         if (frames % gravity == 0) {
-            y_pos += 1;
+            if (validMove(piece, &board_state, rot, x_pos, y_pos+1)) {
+                if (frames % piece_update_rate == 0) y_pos += 1;
+            } else {
+                saveBoard(piece, &board_state, rot, x_pos, y_pos);
+                piece = getNewPiece(random, &x_pos, &y_pos);
+            }
         }
     }
 }
