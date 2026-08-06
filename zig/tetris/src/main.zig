@@ -303,7 +303,7 @@ fn saveBoard(piece: Piece, board: *[visible_rows][cols]?Piece, rotation: u2, x_o
 pub fn main(init: std.process.Init) !void {
     // TODO: seed from std.crypto.random.int(u64) once done debugging; a fixed
     // seed means the same piece sequence every run.
-    var prng = std.Random.DefaultPrng.init(0);
+    var prng = std.Random.DefaultPrng.init(67);
     const random = prng.random();
     _ = init;
 
@@ -356,6 +356,13 @@ pub fn main(init: std.process.Init) !void {
             if (validMove(piece, &board_state, rot, x_pos, y_pos+1)) {
                 if (frames % piece_update_rate == 0) y_pos += 1;
             } 
+        }
+        if (rl.isKeyPressed(.space)) {
+            while (validMove(piece, &board_state, rot, x_pos, y_pos+1)) {
+                y_pos += 1;
+            }
+            saveBoard(piece, &board_state, rot, x_pos, y_pos);
+            piece = getNewPiece(random, &x_pos, &y_pos);
         }
         if (frames % gravity == 0) {
             if (validMove(piece, &board_state, rot, x_pos, y_pos+1)) {
