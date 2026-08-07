@@ -317,6 +317,23 @@ fn clearLinesSplit(board: *[visible_rows][cols]?Piece) void {
     }
 }
 
+fn drawBottomOutline(piece: Piece, board_state: *[visible_rows][cols]?Piece, rotation: u2, x_off: i32, y_off: i32) void {
+    var new_y_offset: i32 = 1;
+    while (validMove(piece, board_state, rotation, x_off, y_off+new_y_offset)) {
+        new_y_offset += 1;
+    }
+    const piece_cells = cells(piece, rotation, x_off, y_off+new_y_offset-1);
+    for (piece_cells) |cell| {
+        const rect = cellRect(cell);
+        rl.drawRectangleLinesEx(.{
+            .x = rect.x,
+            .y = rect.y,
+            .width = cell_size,
+            .height = cell_size,
+        }, 2, border_color);
+    }    
+}
+
 fn clearLines(board: *[visible_rows][cols]?Piece) void {
     var write: u8 = visible_rows;
     var num_cells_full: u4 = 0;
@@ -395,6 +412,11 @@ pub fn main(init: std.process.Init) !void {
                 rot -%= 1;
             }
         }
+        if (rl.isKeyPressed(.z)) {
+            if (validMove(piece, &board_state, rot+%1, x_pos, y_pos)) {
+                rot +%= 1;
+            }
+        }
         if (rl.isKeyDown(.down)) {
             if (validMove(piece, &board_state, rot, x_pos, y_pos+1)) {
                 if (frames % piece_update_rate == 0) y_pos += 1;
@@ -413,7 +435,9 @@ pub fn main(init: std.process.Init) !void {
             }         
         }
 
+        // we can draw an outline of where the piece should be
         drawShape(piece, rot, x_pos, y_pos);
+        drawBottomOutline(piece, &board_state, rot, x_pos, y_pos);
         clearLines(&board_state);
         drawBoard(&board_state);
 
