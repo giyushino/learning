@@ -300,6 +300,49 @@ fn saveBoard(piece: Piece, board: *[visible_rows][cols]?Piece, rotation: u2, x_o
     }
 }
 
+
+fn clearLinesSplit(board: *[visible_rows][cols]?Piece) void {
+    var first_lined_cleared: u8 = undefined;
+    var num_lines_cleared: u8 = 0;
+    var num_cells_full: u4 = 0;
+    
+    for (visible_rows-1..0) |row| {
+        for (board[row]) |cell| {
+            if (cell != null) num_cells_full += 1;
+        }
+        if (num_cells_full == cols) {
+            if (first_lined_cleared == undefined) { first_lined_cleared = row; }
+            else num_lines_cleared += 1;
+        }
+    }
+}
+
+fn clearLines(board: *[visible_rows][cols]?Piece) void {
+    var write: u8 = visible_rows;
+    var num_cells_full: u4 = 0;
+    var row: u8 = visible_rows;
+
+    while (row > 0) {
+        row -= 1;
+        for (board[row]) |cell| {
+            if (cell != null) num_cells_full += 1;
+        }
+        if (num_cells_full != cols) {
+            write -= 1;
+            board[write] = board[row];
+        }
+        num_cells_full = 0;
+    }
+
+    var r: u8 = write;
+    while (r > 0) {
+        r -= 1;
+        for (&board[r]) |*cell| {
+            cell.* = null;
+        }
+    }
+}
+
 pub fn main(init: std.process.Init) !void {
     // TODO: seed from std.crypto.random.int(u64) once done debugging; a fixed
     // seed means the same piece sequence every run.
@@ -371,6 +414,7 @@ pub fn main(init: std.process.Init) !void {
         }
 
         drawShape(piece, rot, x_pos, y_pos);
+        clearLines(&board_state);
         drawBoard(&board_state);
 
         // if the piece can't move down, let's start a timer
