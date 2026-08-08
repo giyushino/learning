@@ -318,7 +318,7 @@ fn clearLinesSplit(board: *[visible_rows][cols]?Piece) void {
 }
 
 fn drawBottomOutline(piece: Piece, board_state: *[visible_rows][cols]?Piece, rotation: u2, x_off: i32, y_off: i32) void {
-    var new_y_offset: i32 = 1;
+    var new_y_offset: i32 = 0;
     while (validMove(piece, board_state, rotation, x_off, y_off+new_y_offset)) {
         new_y_offset += 1;
     }
@@ -366,14 +366,19 @@ pub fn main(init: std.process.Init) !void {
     var prng = std.Random.DefaultPrng.init(67);
     const random = prng.random();
     _ = init;
+    // to think about, we have a lot of streaks, which is expected
+    // in randomness. however, we don't want to see the same piece
+    // in a row, so we can do something like spotify shuffle
 
     rl.initWindow(screen_width, screen_height, "tetris");
     defer rl.closeWindow();
 
     rl.setTargetFPS(60);
 
-    const gravity: u8 = std.math.maxInt(u8);
-    const piece_update_rate: u8 = 5;
+    const gravity: u8 = 10;
+    const piece_slide_rate: u8 = 5;
+    const piece_fall_rate: u8 = 2;
+    const piece_rotate_rate: u8 = 5;
     const num_static_frames: u16 = 60;
     var num_frames_stuck: u16 = 0;
     var rot: u2 = 0;
@@ -385,7 +390,9 @@ pub fn main(init: std.process.Init) !void {
     var old_y_pos: i32 = 0;
     var old_rot: u2 = 0;
 
-    var piece: Piece = .i;
+    var piece: Piece = getNewPiece(random, &x_pos, &y_pos);
+    var next_piece: Piece = getNewPiece(random, &x_pos, &y_pos);
+    
     var board_state = initBoardState();
 
     while (!rl.windowShouldClose()) {
@@ -399,28 +406,33 @@ pub fn main(init: std.process.Init) !void {
 
         if (rl.isKeyDown(.right)) {
             if (validMove(piece, &board_state, rot, x_pos+1, y_pos)) {
-                if (frames % piece_update_rate == 0) x_pos += 1;
+                if (frames % piece_slide_rate == 0) x_pos += 1;
             }
         }
         if (rl.isKeyDown(.left)) {
             if (validMove(piece, &board_state, rot, x_pos-1, y_pos)) {
-                if (frames % piece_update_rate == 0) x_pos -= 1;
+                if (frames % piece_slide_rate == 0) x_pos -= 1;
             }
         }
-        if (rl.isKeyPressed(.up)) {
+        if (rl.isKeyDown(.up)) {
             if (validMove(piece, &board_state, rot-%1, x_pos, y_pos)) {
-                rot -%= 1;
+                if (frames % piece_rotate_rate == 0) rot -%= 1;
             }
         }
         if (rl.isKeyPressed(.z)) {
             if (validMove(piece, &board_state, rot+%1, x_pos, y_pos)) {
-                rot +%= 1;
+                if (frames % piece_rotate_rate == 0) rot +%= 1;
             }
         }
         if (rl.isKeyDown(.down)) {
             if (validMove(piece, &board_state, rot, x_pos, y_pos+1)) {
-                if (frames % piece_update_rate == 0) y_pos += 1;
+                if (frames % piece_fall_rate == 0) y_pos += 1;
             } 
+        }
+        if (rl.isKeyPressed(.c)) {
+            const temp: Piece = piece;
+            piece = next_piece;
+            next_piece = temp;
         }
         if (rl.isKeyPressed(.space)) {
             while (validMove(piece, &board_state, rot, x_pos, y_pos+1)) {
@@ -431,12 +443,13 @@ pub fn main(init: std.process.Init) !void {
         }
         if (frames % gravity == 0) {
             if (validMove(piece, &board_state, rot, x_pos, y_pos+1)) {
-                if (frames % piece_update_rate == 0) y_pos += 1;
+                y_pos += 1;
             }         
         }
 
-        // we can draw an outline of where the piece should be
         drawShape(piece, rot, x_pos, y_pos);
+        drawShape(next_piece, 0, 10, 0);
+        // drawNextPiece(piece);
         drawBottomOutline(piece, &board_state, rot, x_pos, y_pos);
         clearLines(&board_state);
         drawBoard(&board_state);
