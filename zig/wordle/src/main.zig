@@ -11,16 +11,56 @@ const visible_rows = 20;
 const cell_size = 60;
 const origin_x = (screen_width - cols * cell_size) / 2;
 const origin_y = (screen_height - visible_rows * cell_size) / 2;
-
 const bg_color = rl.Color.init(18, 18, 24, 255);
-const grid_color = rl.Color.init(45, 45, 58, 255);
-const border_color = rl.Color.init(120, 120, 140, 255);
+const font_size = 40;
+
+const Coord = struct { col: i32, row: i32 };
+
+fn cellRect(coord: Coord) rl.Rectangle {
+    return .{
+        .x = @floatFromInt(origin_x + coord.col * cell_size),
+        .y = @floatFromInt(origin_y + coord.row * cell_size),
+        .width = cell_size,
+        .height = cell_size,
+    };
+}
+
+pub fn drawLetter(char: [:0]const u8, col: i32, row: i32) void {
+    const rect = cellRect(Coord{ .col = col, .row = row });
+    rl.drawRectangleLinesEx(rect, 2, rl.Color.red);
+
+    // center the glyph inside the cell
+    const text_width: f32 = @floatFromInt(rl.measureText(char, font_size));
+    const text_x = rect.x + (rect.width - text_width) / 2;
+    const text_y = rect.y + (rect.height - font_size) / 2;
+    rl.drawText(char, @intFromFloat(text_x), @intFromFloat(text_y), font_size, rl.Color.white);
+}
+
+pub fn drawWord(x_off: i32, y_off: i32) void {
+    const rect = cellRect(Coord{ .col = x_off, .row = y_off });
+    rl.drawRectangleLinesEx(rect, 2, rl.Color.red);
+}
+
+
+pub fn readWords(init: std.process.Init) !void {
+    const io = init.io;
+
+    var file = try std.Io.Dir.cwd().openFile(io, "src/words.txt", .{});
+    defer file.close(io);
+
+    var buf: [1024]u8 = undefined;
+    var file_reader = file.reader(io, &buf);
+    const r = &file_reader.interface;
+
+    while (try r.takeDelimiter('\n')) |line| {
+        std.debug.print("got: '{s}'\n", .{line});
+    }
+}
 
 pub fn main(init: std.process.Init) !void {
     // var prng = std.Random.DefaultPrng.init(67);
     // const random = prng.random();
-    _ = init;
-
+    try readWords(init);
     rl.initWindow(screen_width, screen_height, "wordle");
     defer rl.closeWindow();
 
@@ -28,8 +68,10 @@ pub fn main(init: std.process.Init) !void {
 
     while (!rl.windowShouldClose()) {
         rl.beginDrawing();
-        rl.drawText("hello", 202, 80, 20, rl.Color.red);
         defer rl.endDrawing();
+
         rl.clearBackground(bg_color);
+        drawLetter("h", 0, 0);
+        drawLetter("e", 1, 0);
     }
 }
