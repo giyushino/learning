@@ -5,41 +5,29 @@ const std = @import("std");
 
 const Results = enum { correct, partial, invalid };
 
+const words = @embedFile("words.txt");
+const stride = 6;
+const word_count = words.len / stride;
+comptime { std.debug.assert(words.len % stride == 0); }
 
-fn countLines(text: []const u8) usize {
-    @setEvalBranchQuota(1_000_000);
-    var n: usize = 0;
-    var iterator = std.mem.tokenizeScalar(u8, text, '\n');
-    while (iterator.next()) |_| { n += 1; }
-    return n;
-}
-
-pub fn createWordList(comptime words: []const u8) [countLines(words)][5]u8 {
-    @setEvalBranchQuota(20_000);
-    var out: [countLines(words)][5] u8 = undefined;
-    var i: usize = 0;
-    var it = std.mem.tokenizeScalar(u8, words, '\n');
-    while (it.next()) |word| {
-        out[i] = word[0..5].*;
-        i+= 1;
-    }
-    return out;
+fn word(i: usize) *const [5]u8 {
+    return words[i * stride ..][0..5];
 }
 
 
-pub fn checkWords(guess: []const u8, sol: []const u8, valid_words: []const [5]u8 ) Results {
+pub fn checkWords(guess: []const u8, sol: []const u8, valid_words: []const u8 ) Results {
     if (std.mem.eql(u8, guess, sol)) return Results.correct;
 
     var l: usize = 0; var r: usize = 0;
     while (l < r) {
         const mid: usize = l + ((r - l) / 2);
-        const word: [5]u8  = valid_words[mid];
+        const w: [5]u8  = valid_words[mid * stride ..][0..5].*;
 
-        if (std.mem.eql(u8, guess, &word)) return Results.correct;
+        if (std.mem.eql(u8, guess, &w)) return Results.correct;
 
-        const compare = std.mem.order(u8, guess, &word);
+        const compare = std.mem.order(u8, guess, &w);
         switch (compare) {
-            .lt => l = mid,
+            .lt => l = mid + 1,
             .eq => return Results.partial,
             .gt => r = mid,
         }
@@ -52,7 +40,11 @@ pub fn checkWords(guess: []const u8, sol: []const u8, valid_words: []const [5]u8
 pub fn main(init: std.process.Init) !void {
     _ = init;
 
-    const words = @embedFile("words.txt");
-    const word_list: [countLines(words)][5]u8 = createWordList(words);
-    std.debug.print("{s}", .{ word_list[0] });
+    std.debug.print("{s}\n", .{ word(0) });
+    const result: Results = checkWords("hello", "tests", words);
+    switch (result) {
+        .correct => std.debug.print("correct\n", .{}),
+        .partial => std.debug.print("partial\n", .{}),
+        .invalid => std.debug.print("invalid\n", .{}),
+    }
 }
