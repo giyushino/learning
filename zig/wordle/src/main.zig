@@ -1,6 +1,7 @@
 const std = @import("std");
 const rl = @import("raylib");
 
+
 const screen_width = 1000;
 const screen_height = 1400;
 
@@ -42,25 +43,31 @@ pub fn drawWord(x_off: i32, y_off: i32) void {
 }
 
 
-pub fn readWords(init: std.process.Init) !void {
-    const io = init.io;
-
-    var file = try std.Io.Dir.cwd().openFile(io, "src/words.txt", .{});
-    defer file.close(io);
-
-    var buf: [1024]u8 = undefined;
-    var file_reader = file.reader(io, &buf);
-    const r = &file_reader.interface;
-
-    while (try r.takeDelimiter('\n')) |line| {
-        std.debug.print("got: '{s}'\n", .{line});
-    }
+fn countLines(text: []const u8) usize {
+    @setEvalBranchQuota(1_000_000);
+    var n: usize = 0;
+    var iterator = std.mem.tokenizeScalar(u8, text, '\n'); 
+    while (iterator.next()) |_| { n += 1; }
+    return n;
 }
 
-pub fn main(init: std.process.Init) !void {
+pub fn createWordList(comptime words: []const u8) [countLines(words)][5]u8 {
+    @setEvalBranchQuota(20_000);
+    var out: [countLines(words)][5] u8 = undefined;
+    var i: usize = 0;
+    var it = std.mem.tokenizeScalar(u8, words, '\n');
+    while (it.next()) |word| {
+        out[i] = word[0..5].*;
+        i+= 1;
+    }
+    return out;
+}
+ 
+
+pub fn oldMain(init: std.process.Init) !void {
     // var prng = std.Random.DefaultPrng.init(67);
     // const random = prng.random();
-    try readWords(init);
+    _ = init;
     rl.initWindow(screen_width, screen_height, "wordle");
     defer rl.closeWindow();
 
@@ -74,4 +81,13 @@ pub fn main(init: std.process.Init) !void {
         drawLetter("h", 0, 0);
         drawLetter("e", 1, 0);
     }
+}
+
+
+pub fn main(init: std.process.Init) !void {
+    _ = init;
+
+    const words = @embedFile("words.txt");
+    const word_list: [countLines(words)][5]u8 = createWordList(words);
+    std.debug.print("{s}", .{ word_list[0] });
 }
