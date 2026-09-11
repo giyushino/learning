@@ -23,12 +23,11 @@ pub fn checkWords(guess: []const u8, sol: []const u8, valid_words: []const u8 ) 
         const mid: usize = l + ((r - l) / 2);
         const w: [5]u8  = valid_words[mid * stride ..][0..5].*;
 
-        if (std.mem.eql(u8, guess, &w)) return Results.correct;
+        if (std.mem.eql(u8, guess, &w)) return Results.partial;
 
         const compare = std.mem.order(u8, guess, &w);
         switch (compare) {
             .lt => l = mid + 1,
-            .eq => return Results.partial,
             .gt => r = mid,
         }
     }
