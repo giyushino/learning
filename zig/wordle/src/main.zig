@@ -15,20 +15,19 @@ fn word(i: usize) *const [5]u8 {
 }
 
 
-pub fn checkWords(guess: []const u8, sol: []const u8, valid_words: []const u8 ) Results {
+pub fn checkGuess(guess: []const u8, sol: []const u8, valid_words: []const u8 ) Results {
     if (std.mem.eql(u8, guess, sol)) return Results.correct;
 
-    var l: usize = 0; var r: usize = 0;
+    var l: usize = 0; var r: usize = word_count;
     while (l < r) {
         const mid: usize = l + ((r - l) / 2);
         const w: [5]u8  = valid_words[mid * stride ..][0..5].*;
 
-        if (std.mem.eql(u8, guess, &w)) return Results.partial;
-
         const compare = std.mem.order(u8, guess, &w);
         switch (compare) {
-            .lt => l = mid + 1,
-            .gt => r = mid,
+            .lt => r = mid,
+            .eq => return Results.partial,
+            .gt => l = mid + 1,
         }
     }
 
@@ -36,14 +35,54 @@ pub fn checkWords(guess: []const u8, sol: []const u8, valid_words: []const u8 ) 
 }
 
 
+pub fn scoreGuess(guess: []const u8, sol: []const u8, allocator: std.mem.Allocator) ![5]u8 {
+    var correctness = [_]u8{0} ** 5 ;
+    var map: std.AutoHashMap(u8, u4) = .init(allocator);
+    defer map.deinit();
+
+    for (sol) |char| {
+        const count = map.get(char) orelse 0;
+        try map.put(char, count + 1);
+    }
+
+    for (0.., sol, guess) |idx, s_char, g_char| {
+        if (s_char == g_char) {
+            correctness[idx] = 2;
+            const count = map.get(s_char).?;
+            try map.put(s_char, count - 1);
+        }
+    }
+
+    for (0.., guess) |idx, char| {
+        if (correctness[idx] ==  0) {
+            const count = map.get(char) orelse 0;
+            if (count != 0) { 
+                correctness[idx] = 1;
+                try map.put(char, count - 1);
+            } 
+        }
+    }
+
+    return correctness;
+}
+
+
 pub fn main(init: std.process.Init) !void {
     _ = init;
 
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    const allocator = gpa.allocator();
+
     std.debug.print("{s}\n", .{ word(0) });
-    const result: Results = checkWords("hello", "tests", words);
+    const result: Results = checkGuess("hello", "tests", words);
     switch (result) {
         .correct => std.debug.print("correct\n", .{}),
         .partial => std.debug.print("partial\n", .{}),
         .invalid => std.debug.print("invalid\n", .{}),
     }
+    const correctness = scoreGuess("cccch", "cockc", allocator);
+    _ = try correctness; 
 }
+
+
+
