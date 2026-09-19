@@ -16,7 +16,11 @@ const bg_color = rl.Color.init(18, 18, 24, 255);
 const font_size = 40;
 
 const Coord = struct { col: i32, row: i32 };
-
+const colors = [3]rl.Color{
+    .init(197, 197, 255, 255), // purple
+    .init(241,195,56, 255), // yellow
+    .init(197, 255, 226, 255) // green
+};
 
 fn cellRect(coord: Coord) rl.Rectangle {
     return .{
@@ -27,24 +31,29 @@ fn cellRect(coord: Coord) rl.Rectangle {
     };
 }
 
-pub fn drawLetter(char: [:0]const u8, col: i32, row: i32) void {
+pub fn drawLetter(char: u8, col: i32, row: i32, color: rl.Color) void {
     const rect = cellRect(Coord{ .col = col, .row = row });
-    rl.drawRectangleLinesEx(rect, 2, rl.Color.red);
+
+    // raylib wants a null-terminated C string, so give the byte a home
+    const buf: [1:0]u8 = .{char};
+    const text: [:0]const u8 = &buf;
+    rl.drawRectangleRec(rect, color);
 
     // center the glyph inside the cell
-    const text_width: f32 = @floatFromInt(rl.measureText(char, font_size));
+    const text_width: f32 = @floatFromInt(rl.measureText(text, font_size));
     const text_x = rect.x + (rect.width - text_width) / 2;
     const text_y = rect.y + (rect.height - font_size) / 2;
-    rl.drawText(char, @intFromFloat(text_x), @intFromFloat(text_y), font_size, rl.Color.white);
+    rl.drawText(text, @intFromFloat(text_x), @intFromFloat(text_y), font_size, rl.Color.white);
 }
 
-pub fn drawWord(x_off: i32, y_off: i32) void {
-    const rect = cellRect(Coord{ .col = x_off, .row = y_off });
-    rl.drawRectangleLinesEx(rect, 2, rl.Color.red);
+pub fn drawWord(word: []const u8, row: i32, correctness: [5] u8) void {
+    for (0.., word) |idx, char| {
+        drawLetter(char, @intCast(idx), row, colors[correctness[idx]]);
+    }
 }
 
 
-pub fn oldMain(init: std.process.Init) !void {
+pub fn render(init: std.process.Init) !void {
     // var prng = std.Random.DefaultPrng.init(67);
     // const random = prng.random();
     _ = init;
@@ -58,7 +67,8 @@ pub fn oldMain(init: std.process.Init) !void {
         defer rl.endDrawing();
 
         rl.clearBackground(bg_color);
-        drawLetter("h", 0, 0);
-        drawLetter("e", 1, 0);
+        drawLetter('h', 0, 0, colors[0]);
+        drawLetter('e', 1, 0, colors[1]);
+        drawWord("hello", 2, .{1, 0, 1, 1, 2});
     }
 }
